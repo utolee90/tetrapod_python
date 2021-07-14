@@ -1,0 +1,8 @@
+# virtual env
+/hangul-utils
+/venv
+/tmp
+
+# sqlite-database
+db.sqlite3
+
