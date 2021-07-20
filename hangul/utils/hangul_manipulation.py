@@ -75,7 +75,7 @@ def length_split(msg, limit):
                 else:
                     fixed_msg.append("".join(split_list_2))
                     if len(split_list)>0: fixed_msg.append("".join(split_list))
-                    split_list, split_list_2 = []. []
+                    split_list, split_list_2 = [], []
 
             break
 
@@ -165,4 +165,149 @@ def recursive_component(data):
         solved_data = list(map(lambda x: "".join(x), presolved_data))
         return solved_data
 
-# 겹자모 판단하기기
+# 겹자모 판단하기. [var1, var2]가 compare_list 안에 있는지 확인. 기본은 DOUBLE_CONSONANT+DOUBLE_VOWEL 안에 있는지 확인함.
+
+def is_double(var1, var2, allow_sim = False):
+    compare_list = []
+    # iterable할 때
+    if allow_sim.__iter__:
+        compare_list = allow_sim if allow_sim.__iter__ else list(map(lambda x: [x[0], x[1]], allow_sim))
+    else:
+        compare_list.extend(DOUBLE_CONSONANTS + DOUBLE_VOWELS)
+        if allow_sim:
+            res1 = product_list([["ㅗ", "ㅜ", "t", "T", "ㅡ", "_"], ["ㅣ", "!", "I", "1", "l", "|"]])
+            compare_list.extend(
+                [
+                    ["ㄱ", "7"], ["7","7"], ["ㄱ","^"], ["7","ㅅ"], ["7","^"], ["ㄹ","^"], ["#","ㅅ"], ["ㅂ","^"], ["#","ㅅ"],
+                    ["ㅗ","H"], ["ㅜ", "y"], ["t", "y"], ["T", "y"], *res1
+                ]
+            )
+
+        return [var1, var2] in compare_list
+
+
+# 맵 파싱하기
+# 맵 형식 {"바":{value:"바", index:[1]}, "ㅂ오":{value:"보", index:[2]}} =>
+# {"message_list": ["바","ㅂ오"], "message_index":[1,2], parsed_message: ["바","보"]}
+def parse_map(input_map):
+    original_message_list = []
+    original_message_index = []
+    parsed_message = []
+    search = 0
+    # index에 존재하는 최댓값.
+    MAX_VALUE = max(list(map(lambda x: max(x["index"]), input_map.values())))
+
+    while search <= MAX_VALUE:
+        for val, obj in input_map.items():
+            if search in obj["index"]:
+                original_message_index.append(search)
+                original_message_list.append(val)
+                parsed_message.append(obj["value"])
+
+                if re.match(r"[ㄱ-ㅎ][가-힣]+$", val):
+                    search += len(val)-1
+                else: search += len(val)
+
+    return {
+        "message_list": original_message_list,
+        "message_index": original_message_index,
+        "parsed_message": parsed_message
+    }
+
+
+# 한글 낱자를 초성/중성/종성으로 분리하기
+def cho_jung_jong(c):
+    try:
+        split_res = split_syllable_char(c)
+        return {
+            "cho": [split_res[0]] if split_res[0] != None else [],
+            "jung": [split_res[1]] if split_res[1] != None else [],
+            "jong": [split_res[2]] if split_res[2] != None else [],
+        }
+    except:
+        return {'cho': [], "jung": [], "jong": []}
+
+# 메시지를 단순히 파싱 입력용 맵으로 바꾸어주는 함수
+# 예시 : "간지" => {"간": {"value":"간", "index":[1]}, "지":{"value":"지", "index":[2]}}
+def msg_to_map(msg):
+    res = {}
+    for ind, val in enumerate(msg):
+        if res.get(val):
+            res[val]["index"].append(ind)
+        else:
+            res[val] = {"value": val, "index": [ind]}
+    return res
+
+
+# 영문 -> 한글변환 조합 만들기
+def qwerty_to_dubeol(msg, is_map = False):
+    MAP = QWERTY_DUBEOL_MAPPING
+
+    qtd_macro = lambda letter: MAP[letter] if letter in MAP.values() else letter
+
+    if not is_map:
+        new_msg = str(map(qtd_macro, msg))
+        return join_jamos(split_syllables(new_msg))
+    # 맵을 만들어야 할 때
+    else:
+        msg_res = []
+        res = {}
+        tmp = "" # 글자값 저장.
+        for ind, letter in enumerate(msg):
+            consonants = CHAR_INITIALS + ["q", "w", "e", "r", "t", "a", "s", "d", "f", "g", "z", "x", "c", "v"]
+            vowels = CHAR_MEDIALS + ["q", "w", "e", "r", "t", "a", "s", "d", "f", "g", "z", "x", "c", "v"]
+
+            def res_macro(sep, val=tmp):
+                if val != "":
+                    msg_res.append(val)
+                    if not res.get(val):
+                        res[val] = {"value": qwerty_to_dubeol(val), "index": [ind - len(val)]}
+                    else: res[val]["index"].append(ind - len(val))
+                    tmp = sep
+
+            # 첫 글자는 무조건 추가
+            if ind ==0: tmp += letter
+
+            #자음 - 뒤에 모음이 아닌 문자가 올 때에만 앞글자에 붙인다.
+            elif letter.lower() in consonants and (ind == len(msg)-1 or msg[ind+1].lower() not in vowels):
+                # 앞에 모음이 오거나
+                if msg[ind-1].lower() in vowels: tmp += letter
+                # 앞앞에 모음 & 앞자음이 쌍자음 형성 가능.
+                elif ind>1 and msg[ind-2].lower() in vowels and msg[ind-1].lower() in consonants:
+
+                    double_test = [
+                        MAP[msg[ind-1]] if msg[ind-1] in MAP else msg[ind-1],
+                        MAP[letter] if letter in MAP else letter,
+                    ]
+
+                    if double_test not in DOUBLE_CONSONANTS: res_macro(letter)
+                    else: tmp +=letter
+
+                else: res_macro(letter)
+
+            # 모음의 경우 자음이 앞에 오면 무조건 앞글자에 붙이기
+            elif letter.lower() in vowels and  msg[ind-1].lower() in consonants:
+                tmp += letter
+
+            elif ind>1 and letter.lower() in vowels and msg[ind-1].lower() in vowels and  msg[ind -2].lower() in consonants:
+                tmp_list = [ qtd_macro(msg[ind-1]), qtd_macro(letter)];
+                if tmp_list in DOUBLE_VOWELS:
+                    tmp += letter
+                else: res_macro(letter)
+
+            else: res_macro(letter)
+
+        #마지막 글자 붙이기
+        if tmp != "":
+            msg_res.append(tmp)
+            if not res.get(tmp):
+                res[tmp] = {"value": qwerty_to_dubeol(tmp), "index": [len(msg) - len(tmp)]}
+            else:
+                res[tmp]["index"].append(len(msg) - len(tmp))
+
+            tmp = ""
+
+        return res
+
+
+
