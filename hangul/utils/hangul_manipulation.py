@@ -397,7 +397,7 @@ class Antispoof:
             return 'c'
         # 한글 모음
         elif letter in CHAR_MEDIALS:
-            return 'm'
+            return 'v'
         # 한글 종성전용
         elif letter in CHAR_FINALS:
             return 'f'
@@ -418,8 +418,11 @@ class Antispoof:
         "원문 출력"
         return self.__msg
 
+    def source_type(self):
+        return self.__list_type
+
     # 유사자음/유사모음으로 된 낱자 모음을 한글로 바꾸기. 혼동 방지를 위해 음절 단위로만 입력값 받기
-    # 예시 : "7ㅓㅈ1" => "거지"
+    # 예시 : "7ㅓ" => "거"
     @classmethod
     def unravel(cls, syllable_letters):
         # 우선 유사자음, 유사모음-> 한글자음, 한글모음으로 바꾸기
@@ -442,7 +445,7 @@ class Antispoof:
         if len(res)>=4 and res[2]+res[3] in DICT_JOIN_DOUBLE_JAMOS.keys():
             res = res[:2] + [DICT_JOIN_DOUBLE_JAMOS[res[2]+res[3]]]
 
-        return join_jamos_char(str(res))
+        return join_jamos_char(res[0], res[1], res[2] if len(res)>2 else None)
 
 
 
@@ -536,57 +539,73 @@ class Antispoof:
         # is_original이 False이면 강제로 한글로 변환해주기
 
         if not is_original:
-            res = list(map(self.unravel, res))
+            res = list(map(lambda x: self.unravel(x) if len(x)>1 else x, res))
             
+        return res
+
+    # 결과 메시지 출력
+    def result(self):
+        return "".join(self.join_by_syllable())
+
+    def result_map(self):
+        res = {}
+        seek = 0
+        msg_chars = self.join_by_syllable(False)
+        for idx, letter in char(msg_chars):
+            if res.get(letter):
+                res[letter]["index"].append(seek)
+                seek += len(letter)
+            else:
+                res[letter] = {}
+                res[letter]["value"] = self.join_by_syllable()
+                res[letter]["index"] = [seek]
+                seek  += len(letter)
+
         return res
 
 
 
-
-
-
-
-
-def antispoof(msg, is_map = False):
-
-    """메시지 타입: c: 자음, v: 모음, h: 한글 낱자, d: 유사자음, w: 유사모음, s:공백, e:나머지 문자"""
-    msg_alphabet_type = []
-    # 낱자별로 확인
-    for letter in msg:
-        if 0xac00 <= ord(letter) <= 0xd7a3:
-            msg_alphabet_type.append('h')
-        elif letter in CHAR_INITIALS+CHAR_FINALS:
-            msg_alphabet_type.append('c')
-        elif letter in CHAR_MEDIALS:
-            msg_alphabet_type.append('v')
-        elif letter in PSEUDO_CONSONANTS.keys():
-            msg_alphabet_type.append('d')
-        elif letter in PSEUDO_VOWELS.keys():
-            msg_alphabet_type.append('w')
-        elif letter in [" ", "\t"]:
-            msg_alphabet_type.append('s')
-        else:
-            msg_alphabet_type.append('e')
-
-    pre_syllable = [] # 음절단위 분리하는 리스트
-    pre_syllable_origin = [] #is_map 사용시 음절의 원본 메시지 저장.
-    pre_index = [] # is_map 사용시
-
-    ind = -1
-    # 캐릭터 타입별 음절 분리
-    for idx, letter in enumerate(msg):
-
-        # pre_syllable에 음절 첫 글자 집어넣는 함수. msg1 사용한 이유는 letter 대신 다른 것을 사용할 수도 있을 때 대비하기
-        def split_syllable(msg1=letter):
-            nonlocal ind
-            pre_syllable.append(msg1)
-            if is_map:
-                pre_syllable_origin.append(letter)
-                ind += len(msg[idx])
-                pre_index.append(ind)
-
-        # 앞 음절에 붙이는 함수
-        def join_jamo_to_prev_syllable(include_pseudo = False, msg1 = letter):
-
-            pass
+# def antispoof(msg, is_map = False):
+#
+#     """메시지 타입: c: 자음, v: 모음, h: 한글 낱자, d: 유사자음, w: 유사모음, s:공백, e:나머지 문자"""
+#     msg_alphabet_type = []
+#     # 낱자별로 확인
+#     for letter in msg:
+#         if 0xac00 <= ord(letter) <= 0xd7a3:
+#             msg_alphabet_type.append('h')
+#         elif letter in CHAR_INITIALS+CHAR_FINALS:
+#             msg_alphabet_type.append('c')
+#         elif letter in CHAR_MEDIALS:
+#             msg_alphabet_type.append('v')
+#         elif letter in PSEUDO_CONSONANTS.keys():
+#             msg_alphabet_type.append('d')
+#         elif letter in PSEUDO_VOWELS.keys():
+#             msg_alphabet_type.append('w')
+#         elif letter in [" ", "\t"]:
+#             msg_alphabet_type.append('s')
+#         else:
+#             msg_alphabet_type.append('e')
+#
+#     pre_syllable = [] # 음절단위 분리하는 리스트
+#     pre_syllable_origin = [] #is_map 사용시 음절의 원본 메시지 저장.
+#     pre_index = [] # is_map 사용시
+#
+#     ind = -1
+#     # 캐릭터 타입별 음절 분리
+#     for idx, letter in enumerate(msg):
+#
+#         # pre_syllable에 음절 첫 글자 집어넣는 함수. msg1 사용한 이유는 letter 대신 다른 것을 사용할 수도 있을 때 대비하기
+#         def split_syllable(msg1=letter):
+#             nonlocal ind
+#             pre_syllable.append(msg1)
+#             if is_map:
+#                 pre_syllable_origin.append(letter)
+#                 ind += len(msg[idx])
+#                 pre_index.append(ind)
+#
+#         # 앞 음절에 붙이는 함수
+#         def join_jamo_to_prev_syllable(include_pseudo = False, msg1 = letter):
+#
+#             pass
+#
 

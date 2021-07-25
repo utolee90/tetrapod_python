@@ -5,3 +5,9 @@ from hangul.hangul_utils import *
 #            "CHAR_INITIALS", "CHAR_MEDIALS", "CHAR_FINALS"]
 
 print(hex(ord("ㄱ")), hex(ord("ㄳ")), hex(ord("ㅎ")), hex(ord("ㅏ")))
+
+from hangul.utils import hangul_manipulation
+
+X = hangul_manipulation.Antispoof("ㅂㅏ#ㅗ")
+
+print(X.join_by_syllable())
