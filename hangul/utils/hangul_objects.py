@@ -113,7 +113,7 @@ JOINT_CONSONANTS = {
     "ㄲ": ["ㄱ", "ㅋ", "ㄲ"],
     "ㄴ": ["ㄴ", "ㄷ", "ㅅ"],
     "ㄷ": ["ㄷ", "ㅌ", "ㅅ", "ㅆ", "ㅈ", "ㅊ"],
-    "ㄸ": ["ㄷ","ㅌ", "ㄸ", "ㅅ", "ㅆ", "ㅈ", "ㅊ" ],
+    "ㄸ": ["ㄷ", "ㅌ", "ㄸ", "ㅅ", "ㅆ", "ㅈ", "ㅊ"],
     "ㄹ": ["ㄴ", "ㄹ"],
     "ㅁ": ["ㅁ", "ㅂ", "ㅍ"],
     "ㅂ": ["ㅁ", "ㅂ", "ㅍ"],
@@ -141,7 +141,7 @@ JOINT_VOWELS = {
 
 # 두벌식- QWERTY 키보드 맵.
 
-QWERTY_DUBEOL_MAPPING= {
+QWERTY_DUBEOL_MAPPING = {
     'q': 'ㅂ', 'Q': 'ㅃ', 'w': 'ㅈ', 'W': 'ㅉ', 'e': 'ㄷ', 'E': 'ㄸ', 'r': 'ㄱ', 'R': 'ㄲ', 't': 'ㅅ', 'T': 'ㅆ',
     'y': 'ㅛ', 'Y': 'ㅛ', 'u': 'ㅕ', 'U': 'ㅕ', 'i': 'ㅑ', 'I': 'ㅑ', 'o': 'ㅐ', 'O': 'ㅒ', 'p': 'ㅔ', 'P': 'ㅖ',
     'a': 'ㅁ', 'A': 'ㅁ', 's': 'ㄴ', 'S': 'ㄴ', 'd': 'ㅇ', 'D': 'ㅇ', 'f': 'ㄹ', 'F': 'ㄹ', 'g': 'ㅎ', 'G': 'ㅎ',
@@ -193,6 +193,10 @@ DICT_DOUBLE_JAMOS = {
     "ㅟ": "ㅜㅣ",
     "ㅢ": "ㅡㅣ"
 }
+
+DICT_DOUBLE_FINALS = {i: DICT_DOUBLE_JAMOS[i] for i in CHAR_FINALS}
+
+DICT_DOUBLE_MEDIALS = {i: DICT_DOUBLE_JAMOS[i] for i in CHAR_MEDIALS}
 
 DICT_JOIN_DOUBLE_JAMOS = {
     "ㄱㅅ": "ㄳ",

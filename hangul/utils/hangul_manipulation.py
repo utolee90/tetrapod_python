@@ -45,8 +45,7 @@ def word_to_array(word):
         elif word[i] == '?':
             word_array = word_array[:-1] + [word_array[-1] + word[i]]
 
-        elif i > 0 and ord(word[i - 1]) >= ord('가') and ord(word[i - 1]) <= ord('힣') and (
-                word[i] == "!" or word[i] == "+"):
+        elif i > 0 and ord('가') <= ord(word[i - 1]) <= ord('힣') and word[i] in ["!", "+"]:
             word_array = word_array[:-1] + [word_array[-1] + word[i]]
 
         else:
@@ -551,7 +550,7 @@ class Antispoof:
         res = {}
         seek = 0
         msg_chars = self.join_by_syllable(False)
-        for idx, letter in char(msg_chars):
+        for idx, letter in msg_chars:
             if res.get(letter):
                 res[letter]["index"].append(seek)
                 seek += len(letter)
@@ -564,48 +563,258 @@ class Antispoof:
         return res
 
 
+# ㅇ, ㅡ 제거, 된소리/거센소리 예사음화 후 비속어 찾기.
+# 예시 : 브압오 -> {'브아':'바', 'ㅂ오':'보'}
+class DropDouble:
 
-# def antispoof(msg, is_map = False):
-#
-#     """메시지 타입: c: 자음, v: 모음, h: 한글 낱자, d: 유사자음, w: 유사모음, s:공백, e:나머지 문자"""
-#     msg_alphabet_type = []
-#     # 낱자별로 확인
-#     for letter in msg:
-#         if 0xac00 <= ord(letter) <= 0xd7a3:
-#             msg_alphabet_type.append('h')
-#         elif letter in CHAR_INITIALS+CHAR_FINALS:
-#             msg_alphabet_type.append('c')
-#         elif letter in CHAR_MEDIALS:
-#             msg_alphabet_type.append('v')
-#         elif letter in PSEUDO_CONSONANTS.keys():
-#             msg_alphabet_type.append('d')
-#         elif letter in PSEUDO_VOWELS.keys():
-#             msg_alphabet_type.append('w')
-#         elif letter in [" ", "\t"]:
-#             msg_alphabet_type.append('s')
-#         else:
-#             msg_alphabet_type.append('e')
-#
-#     pre_syllable = [] # 음절단위 분리하는 리스트
-#     pre_syllable_origin = [] #is_map 사용시 음절의 원본 메시지 저장.
-#     pre_index = [] # is_map 사용시
-#
-#     ind = -1
-#     # 캐릭터 타입별 음절 분리
-#     for idx, letter in enumerate(msg):
-#
-#         # pre_syllable에 음절 첫 글자 집어넣는 함수. msg1 사용한 이유는 letter 대신 다른 것을 사용할 수도 있을 때 대비하기
-#         def split_syllable(msg1=letter):
-#             nonlocal ind
-#             pre_syllable.append(msg1)
-#             if is_map:
-#                 pre_syllable_origin.append(letter)
-#                 ind += len(msg[idx])
-#                 pre_index.append(ind)
-#
-#         # 앞 음절에 붙이는 함수
-#         def join_jamo_to_prev_syllable(include_pseudo = False, msg1 = letter):
-#
-#             pass
-#
+    # 기앙 ->걍 으로 줄일 때 사용하기
+    Y_VOWEL = {
+        "ㅏ":"ㅑ", "ㅐ":'ㅒ', 'ㅑ':'ㅑ', 'ㅒ':'ㅒ', 'ㅓ':'ㅕ', 'ㅔ':'ㅖ', 'ㅕ':'ㅕ', 'ㅖ':'ㅖ',
+        'ㅗ':'ㅛ', 'ㅛ':'ㅛ', 'ㅜ':'ㅠ', 'ㅠ':'ㅠ', 'ㅡ':'ㅠ', 'ㅣ':'ㅣ'
+    }
 
+    LAST_VOWEL = {
+        'ㅏ':['ㅏ'], 'ㅐ':['ㅐ', 'ㅔ'], 'ㅑ': ['ㅏ', 'ㅑ'], 'ㅒ':['ㅐ', 'ㅔ', 'ㅒ', 'ㅖ'],
+        'ㅓ' : ['ㅓ'], 'ㅔ': ['ㅔ', 'ㅐ'], 'ㅕ': ['ㅓ', 'ㅕ'], 'ㅖ':['ㅐ', 'ㅔ', 'ㅒ', 'ㅖ'],
+            'ㅗ':['ㅗ'], 'ㅛ':['ㅛ', 'ㅗ'], 'ㅜ':['ㅜ', 'ㅡ'], 'ㅠ':['ㅠ', 'ㅜ', 'ㅡ'], 'ㅡ':['ㅡ'], 'ㅣ':['ㅣ']
+    }
+
+    ASPIRITED_CONSONANT =  {
+        "ㄱ": "ㅋ", "ㄷ":"ㅌ", "ㅂ":"ㅍ", "ㅅ":"ㅌ", "ㅈ":"ㅌ", "ㅊ":"ㅌ", "ㅋ":"ㅋ", "ㅌ":"ㅌ","ㅍ":"ㅍ", "ㅎ":"ㅎ"
+    }
+
+
+    def __init__(self, msg):
+        self.__msg = msg
+        self.__jamo_list = list(split_syllables(msg))
+
+
+    # 모음 유도 함수. 구아 -> 과 vowel_pair('ㅜ', 'ㅏ') = 'ㅘ'
+    # 답이 없으면 빈 문자열 출력
+    @classmethod
+    def vowel_pair(cls, v1, v2):
+        # 자음+ㅡ+ㅇ+모음 => 자음 + 모음
+        if v1 == 'ㅡ' and v2 == 'ㅣ': return 'ㅢ'
+        elif v1 == 'ㅡ': return v2
+        # 자음+ㅣ+ㅇ+모음 -> y-모음으로 처리
+        elif v1 == 'ㅣ' and v2 in cls.Y_VOWEL.keys():
+            return cls.Y_VOWEL[v1]
+
+        elif v2 == "ㅏ":
+            if v1 in ["ㅏ"] : return 'ㅏ'
+            elif v1 in ['ㅑ', 'ㅕ', 'ㅣ']: return 'ㅑ'
+            elif v1 in ['ㅗ', 'ㅛ', 'ㅜ', 'ㅠ', 'ㅘ', 'ㅝ']: return 'ㅘ'
+            elif v1 in ['ㅒ', 'ㅔ', 'ㅙ']: return "ㅙ"
+
+        elif v2 == "ㅓ":
+            if v1 in ["ㅓ"]: return "ㅓ"
+            elif v1 in ["ㅕ", "ㅑ", "ㅣ", "ㅛ", "ㅠ"]: return "ㅕ"
+            elif v1 in ["ㅗ", "ㅜ", "ㅘ", "ㅝ"]: return "ㅝ"
+            elif v1 in ['ㅐ', 'ㅔ']: return "ㅞ"
+
+        elif v2 == "ㅣ":
+            if v1 =='ㅢ': return "ㅢ"
+            elif v1 in ['ㅜ','ㅟ']: return 'ㅟ'
+
+        else:
+            return ""
+
+    # 앞자음 지울 수 있는지 확인하는 함수. 젖지 -> 저지 -
+    # c1- 앞 글자 받침, c2- 뒷 글자 초성
+    @classmethod
+    def is_duped_consonants(cls, c1, c2):
+        if c2 in JOINT_CONSONANTS.keys():
+            return c1 in JOINT_CONSONANTS[c2]
+        else:
+            return False
+
+    # 자음/모음 압축해서 리스트 표현. 예시: 밥오 -> [ㅂ,ㅏ,ㅂ,ㅇ,ㅗ] -> [ㅂ,ㅏ,ㅂ,ㅗ]
+    def condensed_jamo_list(self):
+        jamo_list = self.__jamo_list
+        ind = 0
+        while ind<len(jamo_list):
+            # ㅇ일 때
+            if 1 < ind < len(jamo_list) and jamo_list[ind] == 'ㅇ':
+                # 자음 + 모음 + ㅇ + 모음
+                if jamo_list[ind-2] in CHAR_INITIALS and jamo_list[ind-1] in CHAR_MEDIALS and jamo_list[ind+1] in CHAR_MEDIALS:
+                    # 모음을 합칠 수 있을 때 모음 합치고 지우기.
+                    if self.vowel_pair(jamo_list[ind-1], jamo_list[ind+1]) != "":
+                        jamo_list[ind-1] = self.vowel_pair(jamo_list[ind-1], jamo_list[ind+1])
+                        del jamo_list[ind:ind+2]
+                # 복자음 종성 + ㅇ + 모음 -> 복자음 분리하기
+                elif jamo_list[ind-2] in CHAR_MEDIALS and jamo_list[ind-1] in DICT_DOUBLE_FINALS.keys():
+                    tmp = DICT_DOUBLE_FINALS[jamo_list[ind-1]]
+                    jamo_list[ind-1] = tmp[0]
+                    jamo_list[ind] = tmp[1]
+                    ind +=1
+                # 단자음 종성 + ㅇ + 모음 -> ㅇ 지우고 단자음 넘겨주기
+                elif jamo_list[ind-1] in set(CHAR_FINALS)&set(CHAR_INITIALS) and jamo_list[ind+1] in CHAR_MEDIALS:
+                    del jamo_list[ind]
+                else:
+                    ind +=1
+
+            # ㅇ이 아닌 자음일 때
+            elif 1 < ind < len(jamo_list) and jamo_list[ind] in CHAR_INITIALS:
+                # 앞 받침이 뒷 초성과 중복되는 발음일 때
+                if self.is_duped_consonants(jamo_list[ind - 1], jamo_list[ind]):
+                    del jamo_list[ind-1]
+                # 받침 뒤 ㅎ이 올 때 - 초성 거센소리로 바꾸고 받침 삭제
+                elif jamo_list[ind] == 'ㅎ' and jamo_list[ind-1] in self.ASPIRITED_CONSONANT.keys():
+                    jamo_list[ind] = self.ASPIRITED_CONSONANT[jamo_list[ind-1]]
+                    del jamo_list[ind-1]
+                # 모음 뒤 앞자음과 복자음 형성 가능한 경우
+                elif ind>1 and jamo_list[ind-2] in CHAR_MEDIALS and jamo_list[ind-1]+jamo_list[ind] in DICT_JOIN_DOUBLE_JAMOS.keys():
+                    jamo_list[ind] = DICT_JOIN_DOUBLE_JAMOS[ jamo_list[ind-1]+jamo_list[ind] ]
+                    del jamo_list[ind-1]
+                # 다음으로 넘겨주기
+                ind +=1
+
+            # 복모음 형성 가능할 경우
+            elif 1 < ind < len(jamo_list) and jamo_list[ind-2] in CHAR_INITIALS and jamo_list[ind] in CHAR_SIMPLE_MEDIALS \
+                and jamo_list[ind-1]+jamo_list[ind] in DICT_JOIN_DOUBLE_JAMOS.keys():
+                jamo_list[ind] = DICT_JOIN_DOUBLE_JAMOS[jamo_list[ind - 1] + jamo_list[ind]]
+                del jamo_list[ind - 1]
+
+            #나머지 경우
+            else:
+                # 첫 글자가 자음, 그 다음에 ㅇ 아닌 자음+모음이 오면 제거
+                if ind == 0 and jamo_list[0] in CHAR_CONSONANTS and jamo_list[1] in CHAR_INITIALS and jamo_list[1] != 0 and jamo_list[2] in CHAR_MEDIALS:
+                    del jamo_list[0]
+
+                else:
+                    ind +=1
+
+        return jamo_list
+
+    # 그러면 결과 출력
+    def result(self):
+        return "".join(self.condensed_jamo_list())
+
+
+    # 자모를 낱자별로 묶어주기
+    def jamo_grouping(self):
+        jamo_list = self.__jamo_list
+        jamo_cut = []
+        ind = 0
+        while ind<len(jamo_list):
+            # 첫 자모
+            if ind == 0:
+                jamo_cut.append(jamo_list[ind])
+                ind +=1
+
+            # 나머지
+            else:
+                # 자음 ㅇ
+                if jamo_list[ind] == 'ㅇ':
+                    # 모음이 앞에 오는 경우
+                    if jamo_list[ind-1] in CHAR_MEDIALS:
+                        # 맨 마지막이거나 뒤에 모음이 안 오면 앞 글자에 연결
+                        if ind == len(jamo_list)-1 or jamo_list[ind+1] not in CHAR_MEDIALS:
+                            jamo_cut[-1] +=jamo_list[ind]
+                            ind +=1
+                        # 자음 + 모음 + ㅇ + 모음 패턴. 그런데 연음 가능. -> 통채로 넣기.
+                        # 구아-> ['ㄱㅜㅇㅏ'], 그이 -> ['ㄱㅡㅇㅣ']
+                        elif self.vowel_pair(jamo_list[ind -1], jamo_list[ind +1]) != "":
+                            jamo_cut[-1] += jamo_list[ind] + jamo_list[ind+1]
+                            ind +=2
+                        # 나머지는 새 음절에 집어넣기
+                        else:
+                            jamo_cut.append(jamo_list[ind])
+                            ind +=1
+
+                    # 자음이 앞에 오는 경우
+                    elif jamo_list[ind-1] in CHAR_INITIALS:
+                        # 뒤에 모음이 오면서 앞 자음이 음절 첫 자모 형성시 앞 자음에 붙이기
+                        if ind<len(jamo_list)-1 and len(jamo_cut[-1]) == 1 and jamo_list[ind+1] in CHAR_MEDIALS:
+                            jamo_cut[-1] += jamo_list[ind] + jamo_list[ind+1]
+                            ind +=2
+                        else:
+                            jamo_cut.append(jamo_list[ind])
+                            ind +=1
+
+                # ㅇ 아닌 받침/초성으로 올 수 있는 자음.
+                elif jamo_list[ind] in set(CHAR_FINALS)&set(CHAR_INITIALS):
+                    # 앞에 모음인 경우 경우 나누기
+                    if jamo_list[ind-1] in CHAR_MEDIALS:
+                        # 우선 받침 + ㅇ + 모음 형식일 때는 뒷 음절로 넘겨주기. 그 다음에 한 번에 넣기
+                        if ind < len(jamo_list) -2 and jamo_list[ind+1] == "ㅇ" and jamo_list[ind+2] in CHAR_MEDIALS:
+                            jamo_cut.append(jamo_list[ind])
+                            jamo_cut[-1] += jamo_list[ind+1] + jamo_list[ind+2]
+                            ind +=3
+                        # 받침 + ㅎ + 모음 형식일 때도 넘겨줄 수 있으면 뒷음절로 넘겨주기
+                        elif jamo_list[ind] in self.ASPIRITED_CONSONANT.keys() and ind < len(jamo_list) -2 \
+                                and jamo_list[ind+1] == 'ㅎ' and jamo_list[ind+2] in CHAR_MEDIALS:
+                            jamo_cut.append(jamo_list[ind])
+                            jamo_cut[-1] += jamo_list[ind + 1] + jamo_list[ind + 2]
+                            ind += 3
+                        # 뒷자음 중복시에도 뒷음절로 넘겨주기 색기 -> [새,ㄱ기]
+                        elif ind < len(jamo_list) -2 and jamo_list[ind+1] in JOINT_CONSONANTS.keys() \
+                            and jamo_list[ind] in JOINT_CONSONANTS[jamo_list[ind+1]] and jamo_list[ind+2] in CHAR_MEDIALS:
+                            jamo_cut.append(jamo_list[ind])
+                            jamo_cut[-1] += jamo_list[ind + 1] + jamo_list[ind + 2]
+                            ind += 3
+                        # 나머지
+                        else:
+                            jamo_cut[-1] += jamo_list[ind]
+                            ind +=1
+                    # 앞에 자음이 오는 경우
+                    elif jamo_list[ind-1] in CHAR_FINALS:
+                        # 뒤에 모음이 오지 않으면서 겹받침 형성 가능할 때는 앞 음절에 붙이기
+                        if jamo_list[ind+1] not in CHAR_MEDIALS and jamo_list[ind-1]+jamo_list[ind] in DICT_JOIN_DOUBLE_JAMOS.keys():
+                            jamo_cut[-1] += jamo_list[ind]
+                        # 나머지
+                        else:
+                            jamo_cut.append(jamo_list[ind])
+                        ind +=1
+
+                    # 나머지
+                    else:
+                        jamo_cut.append(jamo_list[ind])
+                        ind +=1
+
+                # 겹받침 가능한 경우
+                elif jamo_list[ind] in DICT_DOUBLE_FINALS.keys():
+                    if jamo_list[ind-1] in CHAR_MEDIALS:
+                        # 앞뒤로 모음인 경우 겹받침 자음 쪼개기
+                        if ind < len(jamo_list) -1 and jamo_list[ind+1] in CHAR_MEDIALS:
+                            tmp = DICT_DOUBLE_FINALS[jamo_list[ind]]
+                            jamo_cut[-1] += tmp[0]
+                            jamo_cut.append(tmp[1] + jamo_list[ind+1])
+                            ind +=2
+                        # 모음 + 겹받침 + ㅇ + 모음인 경우
+                        elif ind < len(jamo_list) -2 and jamo_list[ind+1] == "ㅇ" and jamo_list[ind+2] in CHAR_MEDIALS:
+                            tmp = DICT_DOUBLE_FINALS[jamo_list[ind]]
+                            jamo_cut[-1] += tmp[0]
+                            jamo_cut.append(tmp[1] + "ㅇ" + jamo_list[ind + 2])
+                            ind += 3
+                        # 나머지 경우
+                        else:
+                            jamo_cut[-1] += jamo_list[ind]
+                            ind +=1
+                    else:
+                        jamo_cut.append(jamo_list[ind])
+                        ind +=1
+
+                # 모음인 경우
+                elif jamo_list[ind] in CHAR_MEDIALS:
+                    # 앞이 자음인 경우
+                    if jamo_list[ind-1] in CHAR_INITIALS:
+                        jamo_cut[-1] += jamo_list[ind]
+                    # 앞앞이 자음, 앞이 이중모음 형성 가능한 경우
+                    elif ind>1 and jamo_list[ind-2] in CHAR_INITIALS and jamo_list[ind-1]+jamo_list[ind] in DICT_DOUBLE_MEDIALS.keys():
+                        jamo_cut[-1] += jamo_list[ind]
+                    else:
+                        jamo_cut.append(jamo_list[ind])
+                    ind +=1
+
+                # 나머지 경우
+                else:
+                    jamo_cut.append(jamo_list[ind])
+                    ind +=1
+
+        return jamo_cut
+
+    def result_map(self):
+        jamo_group = self.jamo_grouping()
+
+        return {txt : join_simple_jamos(txt) for txt in jamo_group}
